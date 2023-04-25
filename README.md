@@ -7,5 +7,5 @@
 已经编写测试通过的编解码方案有`h264, h265`。
 
 ## 编译与运行
-export LD_LIBRARY_PATH=../lib
+export LD_LIBRARY_PATH=../lib  
 `g++ main.cpp -I ../include/ -L ../lib/ -lavcodec -lavutil`
