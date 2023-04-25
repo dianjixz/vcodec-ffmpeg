@@ -12,7 +12,8 @@
 #define _VCODEC_HPP
 
 #include <string>
-
+#include <streambuf>
+#include <fstream>
 #ifdef __cplusplus
 extern "C"
 {
@@ -39,12 +40,17 @@ class vcodec
 {
 public:
     vcodec(std::string in_path, std::string out_path, std::string codec_name);
+    vcodec(std::iostream *sin, std::iostream *sout, std::string codec_name);
     ~vcodec();
     int encode();
     int decode();
 
 private:
-    FILE *fin, *fout;
+    std::fstream fin;
+    std::fstream fout;
+    int use_file;
+    std::iostream *_in;
+    std::iostream *_out;
     std::string codec_name;
 
     AVFrame *frame;
@@ -69,28 +75,43 @@ private:
  */
 vcodec::vcodec(std::string in_path, std::string out_path, std::string codec_name)
 {
-    this->fin = fopen((in_path).c_str(), "rb");
-    if (!this->fin)
+    this->fin.open(in_path.c_str(),std::ios::binary|std::ios::in);
+    if (!this->fin.is_open())
     {
         fprintf(stderr, "[ERROR] Failed to open <%s>\n", in_path.c_str());
+        this->fin.close();
         exit(-1);
     }
-    this->fout = fopen((out_path).c_str(), "wb");
-    if (!this->fout)
+    this->_in = &this->fin;
+    this->fout.open(out_path.c_str(),std::ios::binary|std::ios::out|std::ios::trunc);
+    if (!this->fout.is_open())
     {
+        this->fin.close();
+        this->fout.close();
         fprintf(stderr, "[ERROR] Failed to open <%s>\n", out_path.c_str());
         exit(-1);
     }
+    this->_out = &this->fout;
     this->codec_name = codec_name;
+    use_file = 1;
 }
-
+vcodec::vcodec(std::iostream *sin, std::iostream *sout, std::string codec_name)
+{
+    this->_in = sin;
+    this->_out = sout;
+    this->codec_name = codec_name;
+    use_file = 0;
+}
 /**
  * @brief: vcodec类析构函数
  */
 vcodec::~vcodec()
 {
-    fclose(this->fin);
-    fclose(this->fout);
+    if(use_file)
+    {
+        this->fin.close();
+        this->fout.close();
+    }
 }
 
 /**
@@ -176,9 +197,11 @@ int vcodec::encode()
     int y_size = this->codec_ctx->width * this->codec_ctx->height; // size of Y
     av_image_fill_arrays(this->frame->data, this->frame->linesize, frame_buf, this->codec_ctx->pix_fmt, this->codec_ctx->width, this->codec_ctx->height, 1);
     int i = 0;
-    while (!feof(this->fin))
+    while (this->_in->peek() != EOF)
     {
-        if (fread(frame_buf, 1, y_size * 3 / 2, this->fin) <= 0)
+        this->_in->read((char*)frame_buf, (y_size * 3 / 2));
+        int num = this->_in->gcount();
+        if (num <= 0)
         {
             break;
         }
@@ -260,10 +283,11 @@ int vcodec::decode()
     // start to decode
     int input_buf_size = 4096;
     uint8_t input_buf[input_buf_size + AV_INPUT_BUFFER_PADDING_SIZE] = {0};
-    while (!feof(this->fin))
+    while (!this->_in->eof())
     {
         // read source data
-        int read_size = fread(input_buf, 1, input_buf_size, this->fin);
+        this->_in->read((char*)input_buf, input_buf_size);
+        int read_size = this->_in->gcount();
         if (!read_size)
         {
             break;
@@ -325,7 +349,7 @@ int vcodec::encode_frame2packet()
             return -1;
         }
 
-        fwrite(this->packet->data, 1, this->packet->size, this->fout);
+        this->_out->write((char*)this->packet->data, this->packet->size);
         fprintf(stdout, "[INFO] Saving packet %3" PRId64 " (size=%5d)\n", this->packet->pts, this->packet->size);
         av_packet_unref(this->packet);
     }
@@ -361,15 +385,15 @@ int vcodec::decode_packet2frame()
         // Y, U, V
         for (int i = 0; i < frame->height; i++)
         {
-            fwrite(frame->data[0] + frame->linesize[0] * i, 1, frame->width, this->fout);
+            this->_out->write((char *)(frame->data[0] + frame->linesize[0] * i), frame->width);
         }
         for (int i = 0; i < frame->height / 2; i++)
         {
-            fwrite(frame->data[1] + frame->linesize[1] * i, 1, frame->width / 2, this->fout);
+            this->_out->write((char*)(frame->data[1] + frame->linesize[1] * i), frame->width / 2);
         }
         for (int i = 0; i < frame->height / 2; i++)
         {
-            fwrite(frame->data[2] + frame->linesize[2] * i, 1, frame->width / 2, this->fout);
+            this->_out->write((char*)(frame->data[2] + frame->linesize[2] * i), frame->width / 2);
         }
 
         fprintf(stdout, "[INFO] Saving frame %3d\n", this->codec_ctx->frame_number);
