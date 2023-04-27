@@ -40,7 +40,20 @@ extern "C"
 class vcodec
 {
 public:
+    enum
+    {
+        FILE_READ_CALL,
+        FILE_READ_WRITE,
+        FILE_READ_WRITE_CALL,
+        IOSTREAM_READ_CALL,
+        IOSTREAM_READ_WRITE,
+        IOSTREAM_READ_WRITE_CALL,
+        CUSTOM_READ_CALL,
+        CUSTOM_READ_WRITE,
+        CUSTOM_READ_WRITE_CALL,
+    };
     typedef void (*callback_get_ones_frame_t)(size_t, void *, size_t);
+    typedef int (*callback_inface_fun_t)(void *, size_t);
     typedef struct _frame_rgb_data
     {
         char *data;
@@ -55,16 +68,24 @@ public:
     vcodec(std::iostream *sin, std::string _codec_name, callback_get_ones_frame_t callback);
     vcodec(std::iostream *sin, std::iostream *sout, std::string _codec_name);
     vcodec(std::iostream *sin, std::iostream *sout, std::string _codec_name, callback_get_ones_frame_t callback);
+    vcodec(callback_inface_fun_t read, callback_inface_fun_t eof, std::string _codec_name, callback_get_ones_frame_t callback);
+    vcodec(callback_inface_fun_t read, callback_inface_fun_t eof, callback_inface_fun_t write, std::string _codec_name);
+    vcodec(callback_inface_fun_t read, callback_inface_fun_t eof, callback_inface_fun_t write, std::string _codec_name, callback_get_ones_frame_t callback);
+
     void set_callback(callback_get_ones_frame_t callback);
+
+    callback_inface_fun_t custom_write, custom_read, custom_eof;
+
     int yuv2rgb(void *_frame, int mode);
     int yuv2rgb(void *_frame);
-    void data_init(std::string in_path, std::string out_path, std::iostream *sin, std::iostream *sout, std::string _codec_name, callback_get_ones_frame_t callback);
+    void data_init(callback_inface_fun_t read, callback_inface_fun_t eof, callback_inface_fun_t write, std::string in_path, std::string out_path, std::iostream *sin, std::iostream *sout, std::string _codec_name, callback_get_ones_frame_t callback);
     void clear(void);
     ~vcodec();
     int encode();
     int decode();
 
 private:
+    int mode;
     std::fstream fin;
     std::fstream fout;
     int use_file;
@@ -83,14 +104,20 @@ private:
     callback_get_ones_frame_t fun;
     int encode_frame2packet();
     int decode_packet2frame();
+    int c_write(void *buf, size_t n);
+    int c_read(void *buf, size_t n);
+    int c_eof(void *buf, size_t n);
 };
 
 /**********************************************************************
  * vcodec类实现部分
  **********************************************************************
  */
-void vcodec::data_init(std::string in_path, std::string out_path, std::iostream *sin, std::iostream *sout, std::string _codec_name, callback_get_ones_frame_t callback)
+void vcodec::data_init(callback_inface_fun_t read, callback_inface_fun_t eof, callback_inface_fun_t write, std::string in_path, std::string out_path, std::iostream *sin, std::iostream *sout, std::string _codec_name, callback_get_ones_frame_t callback)
 {
+    this->custom_read = read;
+    this->custom_eof = eof;
+    this->custom_write = write;
     this->rgb.data = NULL;
     this->_in = sin;
     this->_out = sout;
@@ -131,7 +158,8 @@ vcodec::vcodec(std::string in_path, std::string _codec_name, callback_get_ones_f
     std::iostream *__sout = NULL;
     std::string __codec_name = _codec_name;
     callback_get_ones_frame_t __callback = callback;
-    data_init(__in_path, __out_path, __sin, __sout, __codec_name, __callback);
+    data_init(NULL, NULL, NULL, __in_path, __out_path, __sin, __sout, __codec_name, __callback);
+    this->mode = FILE_READ_CALL;
 }
 
 /**
@@ -148,7 +176,8 @@ vcodec::vcodec(std::string in_path, std::string out_path, std::string _codec_nam
     std::iostream *__sout = NULL;
     std::string __codec_name = _codec_name;
     callback_get_ones_frame_t __callback = NULL;
-    data_init(__in_path, __out_path, __sin, __sout, __codec_name, __callback);
+    data_init(NULL, NULL, NULL, __in_path, __out_path, __sin, __sout, __codec_name, __callback);
+    this->mode = FILE_READ_WRITE;
 }
 vcodec::vcodec(std::string in_path, std::string out_path, std::string _codec_name, callback_get_ones_frame_t callback)
 {
@@ -158,7 +187,8 @@ vcodec::vcodec(std::string in_path, std::string out_path, std::string _codec_nam
     std::iostream *__sout = NULL;
     std::string __codec_name = _codec_name;
     callback_get_ones_frame_t __callback = callback;
-    data_init(__in_path, __out_path, __sin, __sout, __codec_name, __callback);
+    data_init(NULL, NULL, NULL, __in_path, __out_path, __sin, __sout, __codec_name, __callback);
+    this->mode = FILE_READ_WRITE_CALL;
 }
 vcodec::vcodec(std::iostream *sin, std::iostream *sout, std::string _codec_name)
 {
@@ -168,7 +198,8 @@ vcodec::vcodec(std::iostream *sin, std::iostream *sout, std::string _codec_name)
     std::iostream *__sout = sout;
     std::string __codec_name = _codec_name;
     callback_get_ones_frame_t __callback = NULL;
-    data_init(__in_path, __out_path, __sin, __sout, __codec_name, __callback);
+    data_init(NULL, NULL, NULL, __in_path, __out_path, __sin, __sout, __codec_name, __callback);
+    this->mode = IOSTREAM_READ_WRITE;
 }
 vcodec::vcodec(std::iostream *sin, std::string _codec_name, callback_get_ones_frame_t callback)
 {
@@ -178,7 +209,8 @@ vcodec::vcodec(std::iostream *sin, std::string _codec_name, callback_get_ones_fr
     std::iostream *__sout = NULL;
     std::string __codec_name = _codec_name;
     callback_get_ones_frame_t __callback = callback;
-    data_init(__in_path, __out_path, __sin, __sout, __codec_name, __callback);
+    data_init(NULL, NULL, NULL, __in_path, __out_path, __sin, __sout, __codec_name, __callback);
+    this->mode = IOSTREAM_READ_CALL;
 }
 vcodec::vcodec(std::iostream *sin, std::iostream *sout, std::string _codec_name, callback_get_ones_frame_t callback)
 {
@@ -188,8 +220,44 @@ vcodec::vcodec(std::iostream *sin, std::iostream *sout, std::string _codec_name,
     std::iostream *__sout = sout;
     std::string __codec_name = _codec_name;
     callback_get_ones_frame_t __callback = callback;
-    data_init(__in_path, __out_path, __sin, __sout, __codec_name, __callback);
+    data_init(NULL, NULL, NULL, __in_path, __out_path, __sin, __sout, __codec_name, __callback);
+    this->mode = IOSTREAM_READ_WRITE_CALL;
 }
+
+vcodec::vcodec(callback_inface_fun_t read, callback_inface_fun_t eof, std::string _codec_name, callback_get_ones_frame_t callback)
+{
+    std::string __in_path;
+    std::string __out_path;
+    std::iostream *__sin = NULL;
+    std::iostream *__sout = NULL;
+    std::string __codec_name = _codec_name;
+    callback_get_ones_frame_t __callback = callback;
+    data_init(read, eof, NULL, __in_path, __out_path, __sin, __sout, __codec_name, __callback);
+    this->mode = CUSTOM_READ_CALL;
+}
+vcodec::vcodec(callback_inface_fun_t read, callback_inface_fun_t eof, callback_inface_fun_t write, std::string _codec_name)
+{
+    std::string __in_path;
+    std::string __out_path;
+    std::iostream *__sin = NULL;
+    std::iostream *__sout = NULL;
+    std::string __codec_name = _codec_name;
+    callback_get_ones_frame_t __callback = NULL;
+    data_init(read, eof, write, __in_path, __out_path, __sin, __sout, __codec_name, __callback);
+    this->mode = CUSTOM_READ_WRITE;
+}
+vcodec::vcodec(callback_inface_fun_t read, callback_inface_fun_t eof, callback_inface_fun_t write, std::string _codec_name, callback_get_ones_frame_t callback)
+{
+    std::string __in_path;
+    std::string __out_path;
+    std::iostream *__sin = NULL;
+    std::iostream *__sout = NULL;
+    std::string __codec_name = _codec_name;
+    callback_get_ones_frame_t __callback = callback;
+    data_init(read, eof, write, __in_path, __out_path, __sin, __sout, __codec_name, __callback);
+    this->mode = CUSTOM_READ_WRITE_CALL;
+}
+
 void vcodec::set_callback(callback_get_ones_frame_t callback)
 {
     this->fun = callback;
@@ -347,13 +415,16 @@ int vcodec::encode()
     int y_size = this->codec_ctx->width * this->codec_ctx->height; // size of Y
     av_image_fill_arrays(this->frame->data, this->frame->linesize, frame_buf, this->codec_ctx->pix_fmt, this->codec_ctx->width, this->codec_ctx->height, 1);
     int i = 0;
-    while (!this->_in->eof())
+    while (!this->c_eof(NULL, 0))
     {
-        this->_in->read((char *)frame_buf, (y_size * 3 / 2));
-        int num = this->_in->gcount();
-        if (num <= 0)
+        int num = this->c_read(frame_buf, (y_size * 3 / 2));
+        if (num < 0)
         {
             break;
+        }
+        else if (num == 0)
+        {
+            continue;
         }
 
         // read yuv data from source file into AVFrame
@@ -433,16 +504,20 @@ int vcodec::decode()
     // start to decode
     int input_buf_size = 4096;
     uint8_t input_buf[input_buf_size + AV_INPUT_BUFFER_PADDING_SIZE] = {0};
-    while (!this->_in->eof())
+    while (!this->c_eof(NULL, 0))
     {
         // read source data
-        this->_in->read((char *)input_buf, input_buf_size);
-        int read_size = this->_in->gcount();
-        if (!read_size)
+        // this->_in->read((char *)input_buf, input_buf_size);
+        // int read_size = this->_in->gcount();
+        int read_size = this->c_read(input_buf, input_buf_size);
+        if (read_size < 0)
         {
             break;
         }
-
+        else if (read_size == 0)
+        {
+            continue;
+        }
         uint8_t *input_buf_pos = input_buf;
         while (read_size > 0)
         {
@@ -464,6 +539,7 @@ int vcodec::decode()
                 // decode packet into frame
                 if (this->decode_packet2frame() != 0)
                 {
+                    fprintf(stderr, "Error while packet2frame\n");
                     return -1;
                 }
             }
@@ -502,7 +578,8 @@ int vcodec::encode_frame2packet()
         if (this->fun)
             this->fun(ecount++, this->packet->data, this->packet->size);
         if (this->_out)
-            this->_out->write((char *)this->packet->data, this->packet->size);
+            this->c_write((this->packet->data), (this->packet->size));
+        // this->_out->write((char *)this->packet->data, this->packet->size);
         fprintf(stdout, "[INFO] Saving packet %3" PRId64 " (size=%5d)\n", this->packet->pts, this->packet->size);
         av_packet_unref(this->packet);
     }
@@ -540,17 +617,21 @@ int vcodec::decode_packet2frame()
         // Y, U, V
         if (this->_out)
         {
+
             for (int i = 0; i < frame->height; i++)
             {
-                this->_out->write((char *)(frame->data[0] + frame->linesize[0] * i), frame->width);
+                // this->_out->write((char *)(frame->data[0] + frame->linesize[0] * i), frame->width);
+                this->c_write((frame->data[0] + frame->linesize[0] * i), (frame->width));
             }
             for (int i = 0; i < frame->height / 2; i++)
             {
-                this->_out->write((char *)(frame->data[1] + frame->linesize[1] * i), frame->width / 2);
+                // this->_out->write((char *)(frame->data[1] + frame->linesize[1] * i), frame->width / 2);
+                this->c_write((frame->data[1] + frame->linesize[1] * i), (frame->width / 2));
             }
             for (int i = 0; i < frame->height / 2; i++)
             {
-                this->_out->write((char *)(frame->data[2] + frame->linesize[2] * i), frame->width / 2);
+                // this->_out->write((char *)(frame->data[2] + frame->linesize[2] * i), frame->width / 2);
+                this->c_write((frame->data[2] + frame->linesize[2] * i), (frame->width / 2));
             }
         }
 
@@ -558,6 +639,81 @@ int vcodec::decode_packet2frame()
         av_frame_unref(this->frame);
     }
     return 0;
+}
+int vcodec::c_write(void *buf, size_t n)
+{
+    switch (mode)
+    {
+    case FILE_READ_WRITE:
+    case FILE_READ_WRITE_CALL:
+    case IOSTREAM_READ_WRITE:
+    case IOSTREAM_READ_WRITE_CALL:
+    {
+        this->_out->write((char *)buf, n);
+    }
+    break;
+    case CUSTOM_READ_WRITE:
+    case CUSTOM_READ_WRITE_CALL:
+    {
+        this->custom_write(buf, n);
+    }
+    break;
+    default:
+        break;
+    }
+    return 0;
+}
+int vcodec::c_read(void *buf, size_t n)
+{
+    switch (mode)
+    {
+    case FILE_READ_CALL:
+    case FILE_READ_WRITE:
+    case FILE_READ_WRITE_CALL:
+    case IOSTREAM_READ_CALL:
+    case IOSTREAM_READ_WRITE:
+    case IOSTREAM_READ_WRITE_CALL:
+    {
+        this->_in->read((char *)buf, n);
+        int mk = this->_in->gcount();
+        return mk;
+    }
+    break;
+    case CUSTOM_READ_CALL:
+    case CUSTOM_READ_WRITE:
+    case CUSTOM_READ_WRITE_CALL:
+    {
+        return this->custom_read(buf, n);
+    }
+    break;
+    default:
+        break;
+    }
+}
+int vcodec::c_eof(void *buf, size_t n)
+{
+    switch (mode)
+    {
+    case FILE_READ_CALL:
+    case FILE_READ_WRITE:
+    case FILE_READ_WRITE_CALL:
+    case IOSTREAM_READ_CALL:
+    case IOSTREAM_READ_WRITE:
+    case IOSTREAM_READ_WRITE_CALL:
+    {
+        return (int)this->_in->eof();
+    }
+    break;
+    case CUSTOM_READ_CALL:
+    case CUSTOM_READ_WRITE:
+    case CUSTOM_READ_WRITE_CALL:
+    {
+        return this->custom_eof(NULL, 0);
+    }
+    break;
+    default:
+        break;
+    }
 }
 
 #endif
